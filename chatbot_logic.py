@@ -26,6 +26,19 @@ _COMMENT_SPAM_TERMS = {
     "crypto signal",
     "kiem tien nhanh",
 }
+_REPLY_PREFIX_PATTERN = re.compile(r"^\[REPLY\]\s*", re.IGNORECASE)
+_REASONING_LINE_PATTERN = re.compile(
+    r"^\s*(?:thoughts?|analysis|reasoning|chain[- ]of[- ]thought|internal(?:\s+thinking)?|explanation|note)\s*[:\-]\s*",
+    re.IGNORECASE,
+)
+_META_REASONING_MARKERS = (
+    "the user comment",
+    "is not spam",
+    "should be considered",
+    "i need to respond",
+    "short, polite",
+    "therefore",
+)
 
 
 def get_system_instruction(state: str) -> str:
@@ -178,6 +191,54 @@ def _extract_ai_text(response: object) -> str:
     return ""
 
 
+def _parse_generated_comment_reply(ai_text: str) -> Tuple[Optional[str], str]:
+    text = str(ai_text or "").strip()
+    if not text:
+        return None, "empty"
+
+    text = re.sub(r"```[\w-]*", "", text).replace("```", "").strip()
+    if not text:
+        return None, "empty"
+
+    if "[SKIP]" in text.upper() and "[REPLY]" not in text.upper():
+        return None, "skip"
+
+    reply_match = re.search(r"\[REPLY\]\s*(.+)", text, flags=re.IGNORECASE | re.DOTALL)
+    candidate = reply_match.group(1).strip() if reply_match else text
+
+    filtered_lines = []
+    for raw_line in candidate.splitlines():
+        line = str(raw_line or "").strip()
+        if not line:
+            continue
+        line = _REASONING_LINE_PATTERN.sub("", line).strip()
+        line = _REPLY_PREFIX_PATTERN.sub("", line).strip()
+        if not line:
+            continue
+
+        lowered = line.lower()
+        if any(marker in lowered for marker in _META_REASONING_MARKERS):
+            continue
+        if line.upper() == "[SKIP]":
+            return None, "skip"
+
+        filtered_lines.append(line)
+
+    if not filtered_lines:
+        return None, "empty"
+
+    # If the model prints "thoughts" then final answer on a new line, keep only the last line.
+    reply_text = " ".join(filtered_lines) if reply_match else filtered_lines[-1]
+    reply_text = " ".join(reply_text.split()).strip(" \"'")
+
+    if not reply_text:
+        return None, "empty"
+    if reply_text.upper() == "[SKIP]":
+        return None, "skip"
+
+    return reply_text, "ok"
+
+
 def build_comment_reply(comment_text: str) -> Tuple[Optional[str], str]:
     normalized = _normalize_comment_text(comment_text)
     if _looks_like_noise_comment(normalized):
@@ -193,8 +254,10 @@ def build_comment_reply(comment_text: str) -> Tuple[Optional[str], str]:
         "You are an assistant for a Facebook fanpage. "
         "Decide if a user comment is spam/noise or valid.\n"
         "Rules:\n"
-        "1) If spam/noise/meaningless comment, return EXACTLY [SKIP].\n"
-        "2) If valid, write one short Vietnamese message (1-2 sentences) directly related to the comment.\n"
+        "1) Return EXACTLY one line in one of two formats:\n"
+        "   [SKIP]\n"
+        "   [REPLY] <one short Vietnamese message (1-2 sentences) directly related to the comment>\n"
+        "2) Do not include explanations, thoughts, labels, or extra text outside the required format.\n"
         "3) Keep polite and natural tone, no markdown, no emojis, no hashtags, no quotes.\n"
         "4) Do not mention being an AI.\n\n"
         f"Comment: {normalized}"
@@ -208,10 +271,13 @@ def build_comment_reply(comment_text: str) -> Tuple[Optional[str], str]:
         if not ai_text:
             return _fallback_comment_reply(normalized), "success_fallback"
 
-        if ai_text.upper().startswith("[SKIP]"):
+        parsed_reply, parse_status = _parse_generated_comment_reply(ai_text)
+        if parse_status == "skip":
             return None, "skipped_spam_comment"
+        if parsed_reply:
+            return parsed_reply, "success"
 
-        return ai_text, "success"
+        return _fallback_comment_reply(normalized), "success_fallback"
     except Exception as exc:
         logger.error("Error generating comment reply from Gemini: %s", exc)
         return _fallback_comment_reply(normalized), "success_fallback"
