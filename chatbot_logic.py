@@ -104,9 +104,9 @@ def build_reply(sender_id: str, user_text: str) -> Tuple[str, bool]:
                 return reply_text, is_greeting
         except Exception as exc:
             logger.error("Error generating Gemini response: %s", exc)
-            return f"Lỗi Gemini: {type(exc).__name__} - {exc}", False
+            return f"B\u1ea1n v\u1eeba n\u00f3i: {user_text}", False
 
-    return f"Bạn vừa nói: {user_text}", False
+    return f"B\u1ea1n v\u1eeba n\u00f3i: {user_text}", False
 
 
 def _normalize_comment_text(comment_text: str) -> str:
