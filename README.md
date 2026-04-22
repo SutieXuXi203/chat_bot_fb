@@ -1,38 +1,37 @@
 # Facebook Fanpage Chatbot
 
-Chatbot Messenger + auto inbox tu comment cho Facebook Fanpage, viet bang Flask.
-Du an ho tro 2 luong chinh:
+A Flask-based chatbot for Facebook Fanpages with two main automation flows:
 
-- Nhac tra loi tin nhan Messenger (webhook `messages`)
-- Tu dong inbox khi user comment bai viet (webhook `feed/comment`)
+- Messenger auto-replies via webhook `messages`
+- Auto inbox after post comments via webhook `feed/comment`
 
-## Tinh nang
+## Features
 
-- Verify webhook Meta (`/webhook` GET + `VERIFY_TOKEN`)
-- Verify signature webhook POST (`X-Hub-Signature-256`) neu co `APP_SECRET`
-- Tu dong gui tin nhan text qua Messenger Send API
-- Tu dong reply comment truoc khi gui inbox (co the bat/tat)
-- Loc comment noise/spam truoc khi gui inbox
-- Luu log user, conversation, message, comment vao MongoDB
-- Cache avatar user vao MongoDB va phuc vu qua endpoint noi bo
-- Retry + exponential backoff khi goi Facebook Graph API
+- Meta webhook verification (`GET /webhook` + `VERIFY_TOKEN`)
+- POST signature verification (`X-Hub-Signature-256`) when `APP_SECRET` is set
+- Automatic text replies through the Messenger Send API
+- Optional public reply to a comment before sending inbox
+- Noise/spam filtering before sending auto inbox
+- MongoDB logging for users, conversations, messages, and comment events
+- User avatar caching in MongoDB with an internal media endpoint
+- Retry with exponential backoff for Facebook Graph API calls
 
-## Kien truc nhanh
+## Project Structure
 
-- `app.py`: Flask app, webhook handler, queue worker cho auto comment
-- `chatbot_logic.py`: logic sinh noi dung tra loi va spam/noise filter
-- `facebook_api.py`: wrapper cho Graph API (send message, reply comment, profile, signature)
-- `database.py`: thao tac MongoDB
-- `api/index.py`: entrypoint de deploy len Vercel
+- `app.py`: Flask app, webhook handlers, queue workers for comment automation
+- `chatbot_logic.py`: reply generation logic and spam/noise filters
+- `facebook_api.py`: Facebook Graph API integration (send message, reply comment, profile, signature checks)
+- `database.py`: MongoDB access layer
+- `api/index.py`: Vercel entrypoint
 
-## Yeu cau
+## Requirements
 
 - Python `3.12.x`
-- MongoDB (local hoac cloud)
-- Meta App da ket noi voi Page
-- Page Access Token hop le
+- MongoDB (local or cloud)
+- A Meta app connected to your Facebook Page
+- A valid Page Access Token
 
-## Cai dat local
+## Local Setup
 
 ```powershell
 python -m venv .venv
@@ -41,19 +40,19 @@ pip install -r requirements.txt
 Copy-Item .env.example .env
 ```
 
-## Bien moi truong quan trong
+## Important Environment Variables
 
-Chinh trong file `.env`:
+Configure these in `.env`:
 
-- `VERIFY_TOKEN`: token verify webhook
-- `FACEBOOK_PAGE_TOKEN` hoac `PAGE_ACCESS_TOKEN`: token gui tin nhan/reply comment
-- `PAGE_ID`: ID fanpage
-- `APP_SECRET`: dung de verify signature webhook POST
-- `GEMINI_API_KEY`: bat AI generation (neu bo trong se dung fallback message)
-- `MONGO_URI`, `MONGO_DB_NAME`: ket noi database
-- `PORT`: cong chay local (mac dinh `5000`)
+- `VERIFY_TOKEN`: webhook verification token
+- `FACEBOOK_PAGE_TOKEN` or `PAGE_ACCESS_TOKEN`: token for sending messages and replying to comments
+- `PAGE_ID`: Facebook Page ID
+- `APP_SECRET`: used to verify webhook request signatures
+- `GEMINI_API_KEY`: enables AI response generation (fallback text is used if empty)
+- `MONGO_URI`, `MONGO_DB_NAME`: MongoDB connection settings
+- `PORT`: local server port (default: `5000`)
 
-Nhom bien auto inbox comment:
+Comment automation variables:
 
 - `FACEBOOK_COMMENT_AUTOMATION_ENABLED=true|false`
 - `FACEBOOK_COMMENT_REPLY_ENABLED=true|false`
@@ -65,64 +64,64 @@ Nhom bien auto inbox comment:
 - `FACEBOOK_COMMENT_QUEUE_SIZE`
 - `FACEBOOK_COMMENT_WORKERS`
 
-## Chay local
+## Run Locally
 
 ```powershell
 python app.py
 ```
 
-Endpoint local:
+Local endpoints:
 
-- `GET /` -> chatbot running
+- `GET /` -> service status
 - `GET /health` -> health check
-- `GET /webhook` -> verify webhook
-- `POST /webhook` -> nhan event tu Meta
-- `GET /media/avatars/<user_id>` -> tra avatar cache
+- `GET /webhook` -> webhook verification
+- `POST /webhook` -> receives Meta webhook events
+- `GET /media/avatars/<user_id>` -> serves cached avatar data
 
-De test webhook tu internet, mo tunnel:
+To test webhooks from the internet, open a tunnel:
 
 ```powershell
 ngrok http 5000
 ```
 
-Sau do dung callback URL: `https://<ngrok-domain>/webhook`
+Then use callback URL: `https://<ngrok-domain>/webhook`
 
-## Cau hinh tren Meta Developers
+## Meta Developer Configuration
 
-1. Tao App va them san pham Messenger
-2. Ket noi app voi fanpage can dung
-3. Cau hinh Webhooks callback URL + `VERIFY_TOKEN`
-4. Subscribe cac event:
+1. Create a Meta app and add Messenger product
+2. Connect the app to the target Facebook Page
+3. Configure Webhooks callback URL and `VERIFY_TOKEN`
+4. Subscribe to events:
    - `messages`
-   - `feed` (de nhan event comment)
-5. Tao/cap lai page access token neu token het han
+   - `feed` (for comment events)
+5. Generate or refresh your Page Access Token when needed
 
-## Luong auto inbox comment
+## Comment Auto-Inbox Flow
 
-1. User comment bai viet cua page
-2. Meta gui `feed/comment` ve `/webhook`
-3. Server log comment vao `facebook_comments`
-4. Bot danh gia noise/spam
-5. Neu hop le:
-   - Tao message inbox (AI hoac fallback)
-   - Co the reply comment (neu bat)
-   - Delay theo config
-   - Gui inbox qua `/me/messages`
-6. Update trang thai: `message_status`, `is_replied`, `is_messaged`
+1. A user comments on a Page post
+2. Meta sends `feed/comment` event to `/webhook`
+3. Server stores the event in `facebook_comments`
+4. Bot checks whether the comment is noise/spam
+5. If valid:
+   - Generate inbox message (AI or fallback)
+   - Optionally reply to the comment
+   - Wait for configured delay
+   - Send Messenger inbox via `/me/messages`
+6. Update status fields: `message_status`, `is_replied`, `is_messaged`
 
-## Deploy Vercel
+## Deploy on Vercel
 
-Repo da co `vercel.json` va entrypoint `api/index.py`.
+This repository already includes `vercel.json` and `api/index.py`.
 
-- Import repo len Vercel
-- Set day du env vars trong Project Settings
+- Import the repository into Vercel
+- Add all required environment variables in Project Settings
 - Deploy
 
-## Troubleshooting nhanh
+## Quick Troubleshooting
 
-- Loi token (Facebook error code `190`): cap lai `PAGE_ACCESS_TOKEN`
-- Webhook bi `403`: kiem tra `APP_SECRET`, `VERIFY_TOKEN`, callback URL
-- Khong gui duoc inbox tu comment: xem cac flag
+- Token error (Facebook code `190`): refresh `PAGE_ACCESS_TOKEN`
+- Webhook returns `403`: verify `APP_SECRET`, `VERIFY_TOKEN`, and callback URL
+- Auto inbox from comments does not send: check
   `FACEBOOK_COMMENT_AUTOMATION_ENABLED`,
   `FACEBOOK_COMMENT_REQUIRE_PREVIOUS_INTERACTION`,
   `FACEBOOK_COMMENT_ENFORCE_24H_WINDOW`
